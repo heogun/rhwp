@@ -3007,6 +3007,19 @@ impl Paragraph {
         }
 
         // 3. char_shapes 결합 (other의 start_pos에 utf16_end 추가)
+        // [#7634] 사양 표 61의 위치는 "글자 모양이 바뀌는 시작 위치"라 같은 위치의 구간은
+        // 하나여야 한다. self 끝(utf16_end) 이후에서 시작하는 구간은 덮는 self 글자가 없는
+        // 지운 글자의 모양이다. other가 위치 0부터 제 구간을 가지면 그 자리는 other 글자가
+        // 차지하므로 남은 self 구간을 버린다. 남기면 같은 위치에 구간이 둘 생기고, 앞 구간을
+        // 읽는 한/글에서 붙인 글자가 지운 글자의 모양으로 바뀐다. other에 위치 0 구간이 없으면
+        // self 구간이 계속 other 앞부분을 덮어야 하므로 그대로 둔다.
+        if other
+            .char_shapes
+            .first()
+            .is_some_and(|cs| cs.start_pos == 0)
+        {
+            self.char_shapes.retain(|cs| cs.start_pos < utf16_end);
+        }
         for cs in &other.char_shapes {
             let new_pos = cs.start_pos + utf16_end;
             // 중복 위치에 같은 스타일이면 스킵
