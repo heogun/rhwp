@@ -1,18 +1,23 @@
 //! 관계형: HWP5 개체 CTRL_HEADER의 0 채움 공통 속성 꼬리와 문단 가져오기 수용 계약(#9225).
-//! 주석 작성: 2026-11-23 10:15 UTC, 실물 샘플 전환 2026-11-23 UTC.
+//! 주석 작성: 2026-11-23 10:15 UTC, 실물 샘플 전환·대상 문단 고정 2026-11-23 11:50 UTC.
 //! 렌더링·조판 결과를 바꾸지 않는 가져오기 검증 계약이므로 시각 일치율·px 좌표를 고정하지 않는다.
 //! 입력 근거: 저장소 HWP5 939건을 CFB 레코드 수준에서 조사하면 `00 00` 꼬리는 버전 5.1.1.0
 //! 파일에서만(표 1554·수식 24893건) 관찰되고 0이 아닌 꼬리는 없다(사양 정오표 #42).
-//! 표: `samples/셀보호.hwp` (SHA-256 1416f36e…), 수식: `samples/수식-문자처럼취급-아님.hwp`
-//! (SHA-256 52b883d8…) — 둘 다 한컴 저장본이며 꼬리를 덧붙이지 않은 원본 그대로 연다.
+//! 표: `samples/셀보호2.hwp` 구역 0 문단 1 (SHA-256 676c27ab…), 수식:
+//! `samples/task1725/text_footnote_tail_overpagination.hwp` 구역 0 문단 483 (SHA-256 d335c26c…)
+//! — 둘 다 버전 5.1.1.0 한컴 저장본이며 꼬리를 덧붙이지 않은 원본 그대로 연다. 구역 첫 문단은
+//! 구역 정의 때문에 이 꼬리와 무관하게 가져오기 대상이 아니므로 그 뒤의 문단을 고른다.
 //! 0이 아닌 꼬리는 실물 사례가 없어 표 샘플의 꼬리만 `00 01`로 바꿔 저장한 합성 입력으로 검사한다.
 use rhwp::{
     document_core::{DocumentCore, ImportParagraphBlockLimits, ImportParagraphBlockRequest},
     model::control::Control,
 };
 
-const TABLE_SAMPLE: &str = "samples/셀보호.hwp";
-const EQUATION_SAMPLE: &str = "samples/수식-문자처럼취급-아님.hwp";
+const TABLE_SAMPLE: (&str, usize) = ("samples/셀보호2.hwp", 1);
+const EQUATION_SAMPLE: (&str, usize) = (
+    "samples/task1725/text_footnote_tail_overpagination.hwp",
+    483,
+);
 
 fn open(path: &str) -> DocumentCore {
     DocumentCore::from_bytes(&std::fs::read(path).expect("required repository fixture")).unwrap()
@@ -55,15 +60,6 @@ fn content(c: &Control) -> String {
     }
 }
 
-/// 첫 대상 개체를 가진 최상위 문단 번호.
-fn host_paragraph(core: &DocumentCore) -> usize {
-    core.document().sections[0]
-        .paragraphs
-        .iter()
-        .position(|p| p.controls.iter().any(is_target))
-        .expect("fixture holds a table or equation")
-}
-
 fn targets(core: &DocumentCore) -> Vec<&Control> {
     core.document().sections[0]
         .paragraphs
@@ -91,14 +87,17 @@ fn blank() -> DocumentCore {
     c
 }
 
-fn assert_imports_and_round_trips(path: &str) {
+fn assert_imports_and_round_trips((path, pi): (&str, usize)) {
     let source = open(path);
-    let pi = host_paragraph(&source);
     let originals: Vec<&Control> = source.document().sections[0].paragraphs[pi]
         .controls
         .iter()
         .filter(|c| is_target(c))
         .collect();
+    assert!(
+        !originals.is_empty(),
+        "{path}: paragraph {pi} holds a table or equation"
+    );
     // 실물 저장본이 이슈의 배치(설명 길이 0 + `00 00`)를 가진다는 전제를 먼저 확인한다.
     for c in &originals {
         assert_eq!(common_tail(c), [0, 0], "{path}: real zero-filled tail");
@@ -163,8 +162,8 @@ fn real_equation_with_zero_filled_common_tail_imports_and_round_trips() {
 
 #[test]
 fn non_zero_common_tail_is_still_rejected_without_mutation() {
-    let mut core = open(TABLE_SAMPLE);
-    let pi = host_paragraph(&core);
+    let (path, pi) = TABLE_SAMPLE;
+    let mut core = open(path);
     {
         let para = &mut core.document_mut().sections[0].paragraphs[pi];
         let Some(Control::Table(t)) = para.controls.iter_mut().find(|c| is_target(c)) else {
