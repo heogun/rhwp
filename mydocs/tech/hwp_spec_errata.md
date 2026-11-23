@@ -2,7 +2,7 @@
 kind: canonical
 status: active
 canonical: mydocs/tech/hwp_spec_errata.md
-last_verified: 2026-11-12
+last_verified: 2026-11-23
 ---
 
 # HWP 5.0 스펙 문서 정오표
@@ -1069,6 +1069,41 @@ IR `SolidFill.pattern_type`은 HWP 저장값을 그대로 둔다. HWPX 파서·�
 `src/renderer/layout/paragraph_layout/list_marker_geometry.rs`의
 `unreferenced_bullet_marker_style`이 소유하며 줄 나눔·배치·paint가 같은 결과를 소비한다.
 기울임·밑줄 등 다른 꾸밈은 독립 근거가 없어 끝 모양을 그대로 쓴다.
+
+## 42. 개체 공통 속성 (표 69) — 설명문 뒤 0 두 바이트 꼬리
+
+- **발견일**: 2026-11-23, [#9225](https://github.com/edwardkim/rhwp/issues/9225).
+- **분류**: 미기술 보완. 공식 원문 표 69는 개체 공통 속성의 전체 길이를 `46 + (2×len)`
+  바이트로 적고 설명문 뒤의 바이트를 기술하지 않는다. 원문 PDF는 변경하지 않는다.
+- **관찰한 배치**: 일부 HWP5 저장본의 표(`tbl `)·수식(`eqed`) `CTRL_HEADER`는 설명문
+  (`len`=0이면 길이 필드) 바로 뒤에 `00 00` 두 바이트를 더 가진다. 표 머리는 48바이트가 된다.
+- **의미**: 미확인. 관찰한 모든 꼬리가 0이었으며 0이 아닌 값의 사례와 한컴 문서의 설명은
+  확보하지 못했다. 공식 필드로 채택하지 않고 파서는 `CommonObjAttr.raw_extra`에 원본
+  그대로 보존한다.
+
+### 교차 확인한 근거
+
+저장소 `samples/` 아래 `.hwp` 939건(CFB로 열 수 있는 904건)의 BodyText를 레코드 수준에서
+읽어 `CTRL_HEADER`의 `46 + 2×len` 이후 바이트를 세었다(2026-11-23, upstream `321ab8f97`).
+
+| FileHeader 버전 | 표·수식이 있는 파일 | 표 꼬리 2B / 0B | 수식 꼬리 2B / 0B |
+|---|---:|---:|---:|
+| 5.1.1.0 | 107 | 1554 / 796 | 24893 / 8040 |
+| 5.0.3.0 ~ 5.1.0.1 | 418 | 0 / 5037 | 0 / 613 |
+
+- 꼬리는 버전 5.1.1.0 파일 48건에서만 나타나고, 그 파일 안의 표·수식은 모두 꼬리를 가진다.
+  다른 길이나 0이 아닌 꼬리는 하나도 없었다. 5.1.1.0이어도 꼬리가 없는 파일이 있어 버전만으로
+  존재를 판정하지 않는다.
+- 예: `samples/셀보호.hwp`(SHA-256 앞 16자리 `1416f36efe30746e`) 표 1개,
+  `samples/수식-문자처럼취급-아님.hwp`(`52b883d8de746d26`) 수식 1개.
+
+### 정정
+
+- 파서(`src/parser/control/shape.rs` `parse_common_obj_attr`)는 설명문 뒤 바이트를
+  `raw_extra`로 보존하고, HWP5 직렬화는 그대로 다시 쓴다. HWPX 저장은 이 바이트를 쓰지 않는다.
+- 문단 가져오기 검증(`src/document_core/commands/paragraph_block/validation/support.rs`)은
+  0으로만 된 꼬리를 채움 바이트로 수용하고 0이 아닌 꼬리는 `uninterpreted common tail`로 거부한다.
+- 회귀: `tests/cases/issue_9225_common_zero_tail_import.rs`.
 
 ## 검증 원칙
 
