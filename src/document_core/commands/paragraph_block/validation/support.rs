@@ -106,13 +106,25 @@ impl<'a> Scan<'a, '_> {
         }
     }
     fn common(&self, c: &CommonObjAttr, raw: &[u8]) -> Result<(), Error> {
-        self.raw_empty(&c.raw_extra, "common tail")?;
+        // [#9225] Hancom writers may pad the CTRL_HEADER after the documented
+        // common attributes (e.g. `desc_len = 0` followed by `00 00`). An
+        // all-zero tail carries no value; the parser keeps it in `raw_extra`
+        // and the HWP serializer writes it back unchanged. Any non-zero tail
+        // remains an uninterpreted extension and is rejected.
+        if c.raw_extra.iter().any(|b| *b != 0) {
+            return Err(self.unsupported("uninterpreted common tail"));
+        }
         let valid = match raw.len() {
             0 | 36 | 40 => true,
             // Legacy writer omits optional prevent_page_break and writes an
             // empty UTF-16 description length after the 36-byte common header.
             38 => raw[36..] == [0, 0],
-            n if n >= 42 => n == 42 + usize::from(u16::from_le_bytes([raw[40], raw[41]])) * 2,
+            n if n >= 42 => {
+                let desc_end = 42 + usize::from(u16::from_le_bytes([raw[40], raw[41]])) * 2;
+                // The bytes after the description are exactly the parsed
+                // zero-filled `raw_extra` tail checked above.
+                n == desc_end + c.raw_extra.len() && raw[desc_end..].iter().all(|b| *b == 0)
+            }
             _ => false,
         };
         if valid {
