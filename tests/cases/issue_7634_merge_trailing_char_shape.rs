@@ -1,5 +1,5 @@
 //! 관계형: 문단 병합 뒤 글자 모양 구간 위치의 순증가와 붙인 글자의 모양 보존 계약(#7634).
-//! 주석 작성: 2026-11-23 UTC.
+//! 주석 작성: 2026-11-23 13:50 UTC.
 //! 렌더링 좌표·시각 일치율을 고정하지 않는다. 독립 근거는 HWP 5.0 사양 표 61의 위치 정의
 //! («글자 모양이 바뀌는 시작 위치»)와, 병합이 뒤 문단 글자의 기존 모양을 바꾸지 않아야 한다는
 //! 편집 계약이다. 입력은 빈 문서에 공개 편집 API로 만든 합성 문서다(한컴 저장본 아님).
@@ -127,7 +127,13 @@ fn backspace_merge_after_deleting_styled_tail_keeps_merged_text_shape() {
     core.delete_text_native(0, 0, 2, 1).unwrap();
     let head = &core.document().sections[0].paragraphs[0];
     assert_eq!(head.text, "가나");
-    assert_eq!(runs(head), vec![(0, body_shape), (2, deleted_shape)]);
+    // 첫 문단은 구역·단 정의 컨트롤(각 8 UTF-16 단위)을 품으므로 위치를 고정하지 않고
+    // 삭제 뒤의 실제 문단 끝 위치를 읽는다.
+    let tail_runs = runs(head);
+    assert_eq!(tail_runs.len(), 2, "{tail_runs:?}");
+    assert_eq!(tail_runs[0], (0, body_shape));
+    assert_eq!(tail_runs[1].1, deleted_shape);
+    let merge_pos = tail_runs[1].0;
 
     core.merge_paragraph_native(0, 1).unwrap();
     let check = |core: &DocumentCore| {
@@ -145,7 +151,7 @@ fn backspace_merge_after_deleting_styled_tail_keeps_merged_text_shape() {
         assert_eq!(sizes.len(), 2, "{sizes:?}");
         assert_eq!(sizes[0].0, 0);
         assert!(sizes[0].1 != 1500 && sizes[0].1 != 2000, "{sizes:?}");
-        assert_eq!(sizes[1], (2, 2000));
+        assert_eq!(sizes[1], (merge_pos, 2000));
     };
     check(&core);
 
